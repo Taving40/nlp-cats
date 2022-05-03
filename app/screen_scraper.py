@@ -1,9 +1,11 @@
 import json
 import sys
-import re
+import time
 from selenium import webdriver
 from selenium.webdriver.common.by import By
-import time
+from selenium.webdriver.remote.webelement import WebElement
+from selenium.webdriver.support.ui import WebDriverWait
+from selenium.webdriver.support import expected_conditions as EC
 
 #TODO: for number of likes per video we would probably need to save all the video links and run a loop over them either with selenium or requests lib
 
@@ -12,48 +14,240 @@ import time
         # 1) <h3> -> <a id="video-title">
         # 2) <div id="metadata-container"> -> <div id="metadata"> -> <div id="metadata-line"> -> two <span>s with the view number and date
 
+#NOTE:  #to see how many videos the channel has query: https://www.youtube.com/results?search_query=channel_name
+        #then look for this span
+        # <span id="video-count" class="style-scope ytd-channel-renderer"> NUMBER_OF_VIDEOS videos </span>
+
+#NOTE:  #to get video links, each is contained in an "a" tag with an id of "thumbnail"
+
+#NOTE:  #useful script for getting all of an elements attributes:
+        #attrs = browser.execute_script('var items = {}; for (index = 0; index < arguments[0].attributes.length; ++index) { items[arguments[0].attributes[index].name] = arguments[0].attributes[index].value }; return items;', 
+        #                               element) #where elemnt is the element we wish to get the attributes for
+
+class VideoInfo():
+
+    def __init__(self, title=None, length=None, views=None, likes=None, date=None, link=None, desc=None):
+        self.title = title
+        self.length = length
+        self.views = views
+        self.likes = likes
+        self.date = date
+        self.link = link
+        self.desc = desc
+
+    def __repr__(self):
+        return f"\n Title:{self.title}, Len:{self.length}, Views:{self.views}, Likes:{self.likes}, Date:{self.date}, Link:{self.link}\n"
+
+    def __str__(self):
+        return f"\n Title:{self.title}, Len:{self.length}, Views:{self.views}, Likes:{self.likes}, Date:{self.date}, Link:{self.link}\n"
+
+    def to_dict(self):
+        return {
+                "title": self.title,
+                "length": self.length, 
+                "views": self.views,
+                "likes": self.likes, 
+                "date": self.date,
+                "link": self.link,
+                "description": self.desc,
+                }
+    
+    def to_json(self):
+        return json.dumps(self.to_dict())
+
+def get_number_of_videos_and_subscribers(channel_name):
+    browser = webdriver.Chrome()
+    browser.set_page_load_timeout(10)
+    browser.implicitly_wait(10)
+    browser.get(f'https://www.youtube.com/results?search_query={channel_name}')
+    submit_form(browser)
+    number_of_vids = browser.find_element(by=By.CSS_SELECTOR, value="#video-count").text
+    number_of_subs = browser.find_element(by=By.CSS_SELECTOR, value="span#subscribers").text
+    browser.close()
+    temp_index = number_of_vids.find(" ")
+    if temp_index == -1:
+        raise Exception("Number of videos has unexpected format")
+    
+    number_of_vids = int(number_of_vids[0:temp_index].replace(",", ""))
+    return number_of_vids, number_of_subs
+
 def submit_form(browser: webdriver.Chrome):
     element = browser.find_element(by=By.CSS_SELECTOR, value="form")
     element.submit()
 
-def get_video_titles(browser: webdriver.Chrome):
-    video_titles = browser.find_elements(by=By.CSS_SELECTOR, value="#video-title")
-    video_titles = [x.text for x in video_titles]
-    return video_titles
+def write_video_info(videos: list, file: str, number_of_subs:str=None, channel_name:str=None, number_of_vids:int=None)->None:
+    with open(file, "w", encoding="utf-8") as f:
+        videos = [x.to_dict() for x in videos]
+        result = {
+            "channel name": channel_name,
+            "number of subscribers": number_of_subs,
+            "number of videos": number_of_vids,
+            "videos": videos
+        }
+        f.write(json.dumps(videos, indent=3))
 
-def scroll_to_bottom(browser: webdriver.Chrome):
-#TODO: edit the js script to remember the previous scroll value and stop once the scroll value no longer changes from one iteration to the next
-    for _ in range(100):
-        time.sleep(0.5)
-        browser.execute_script("window.scrollTo(0, document.querySelector('#content').scrollHeight);")
+def parse_description(parent_element: WebElement) -> str:
+    res = []
+    children = parent_element.find_elements(by=By.CSS_SELECTOR, value="*")
+    for child in children:
+        res.append(child.text + "\n")
+    return ' '.join(res)
+
+# def my_find_element(by, locator)
+
+def get_video_info(browser: webdriver.Chrome):
+
+    videos = []
+
+    time.sleep(1)
+
+    video_titles = browser.find_elements(by=By.CSS_SELECTOR, value="#video-title")
+    video_links = browser.find_elements(by=By.CSS_SELECTOR, value="#thumbnail")
+
+    for x in list(video_links):
+        if not x.get_attribute("href"):
+            video_links.remove(x)
+
+    for i in range(len(video_titles)):
+        videos.append(VideoInfo(
+            title=video_titles[i].text,
+            length=video_links[i].text,
+            link=video_links[i].get_attribute("href"),
+        ))
+
+    for video in list(videos):
+        if video.link.find("shorts") != -1:
+            videos.remove(video)
+
+    print("Initial length of videos: ", len(videos))
+
+    for video in list(videos):
+        print("Now trying for video ", videos.index(video))
+        print("Opening new window...")
+
+        browser.execute_script("window.open();")            #open new tab
+        browser.switch_to.window(browser.window_handles[1]) #switch to new tab
+
+        #Sometimes process hangs on this get
+        try:
+            browser.get(f'{video.link}')
+        except Exception:
+            print("Page failed to load...continuing to next video")
+            browser.execute_script("window.close();")
+            browser.switch_to.window(browser.window_handles[0]) #switch to new tab
+            time.sleep(3)
+            browser.close()
+            browser = webdriver.Chrome()
+            browser.set_page_load_timeout(10)
+            browser.implicitly_wait(10)
+            videos.remove(video)
+            print("After re-opening browser, length of videos is ", len(videos))
+            continue
+        print("Done opening new window!")
+
+
+        print("Getting view_count...")
+        view_count = browser.find_element(by=By.CSS_SELECTOR, value=".view-count")
+        print("Done getting view_count!")
+
+        print("Getting likes...")
+        likes = browser.find_element(by=By.CSS_SELECTOR, value="yt-formatted-string.style-scope.ytd-toggle-button-renderer.style-text")
+        print("Done getting likes! ", likes.get_attribute("aria-label"))
+
+        print("Getting date...")
+        date = browser.find_element(by=By.CSS_SELECTOR, value="#info-strings yt-formatted-string.style-scope.ytd-video-primary-info-renderer")
+        print("Done getting date! ", date.text)
+
+        print("Getting description...")
+        desc = browser.find_element(by=By.CSS_SELECTOR, value="div#description yt-formatted-string")
+        print("Done getting description!")
+
+        print("Storing information in video object...")
+        video.views = view_count.text
+        video.likes = likes.get_attribute("aria-label")
+        if not video.likes:
+            video.likes = likes.text
+        video.date = date.text
+        video.desc = parse_description(desc)
+        print("Done storing information in video object!\n")
+
+        browser.execute_script("window.close();")
+        browser.switch_to.window(browser.window_handles[0]) #switch to new tab
+
+    return videos, browser
+
+
+def scroll_to_bottom(browser: webdriver.Chrome, number_of_videos: int):
+    """This function scrolls to the bottom of the window to allow render of next batch of 30 videos.
+    It does this for number_of_videos/30 + 1 to reach the bottom of the page."""
+    pass
+
+    # while len(browser.find_elements(by=By.CSS_SELECTOR, value="ytd-grid-video-renderer.style-scope.ytd-grid-renderer")) < number_of_videos:
+    #     previous_nr_of_vids = len(browser.find_elements(by=By.CSS_SELECTOR, value="ytd-grid-video-renderer.style-scope.ytd-grid-renderer"))
+    #     new_nr_of_vids = -1
+    #     browser.execute_script("window.scrollTo(0, document.querySelector('#content').scrollHeight);")
+    #     while new_nr_of_vids <= previous_nr_of_vids:
+    #         time.sleep(0.3)
+    #         print(new_nr_of_vids)
+    #         new_nr_of_vids = len(browser.find_elements(by=By.CSS_SELECTOR, value="ytd-grid-video-renderer.style-scope.ytd-grid-renderer"))
+
+
+def get_channel_name_from_link(link:str) -> str:
+    browser = webdriver.Chrome()
+    browser.set_page_load_timeout(10)
+    browser.implicitly_wait(10)
+    browser.get(link)
+    submit_form(browser)
+    channel_name = browser.find_element(by=By.CSS_SELECTOR, value="yt-formatted-string.ytd-channel-name").text
+    browser.close()
+    return channel_name
+
+    # alternative hard coded way of getting channel name (might fail on some link formats)
+    # temp_index_start = link.find("user")
+    # if temp_index_start == -1:
+    #     temp_index_start = link.find("channel")
+    # temp_index_end = link.find("/videos")
+    # return link[temp_index_start+5:temp_index_end]
 
 if __name__ == "__main__":
+
+    #defaults if none were provided from cli
+    LINKS = ['http://www.youtube.com/user/jimmydiresta/videos']
+    CHANNEL_NAMES = ['jimmydiresta']
+    RESULT_FILE_NAMES = ["result.json"]
     
-    #default link if none was provided from cli
-    link = 'http://www.youtube.com/user/jimmydiresta/videos'
-    if len(sys.argv) == 2:
-        link = sys.argv[1]
+    if len(sys.argv) >= 2:
+        LINKS = list(sys.argv[1:])
+        CHANNEL_NAMES = [get_channel_name_from_link(link) for link in LINKS]
+        RESULT_FILE_NAMES = [f"{name}.json" for name in CHANNEL_NAMES]
 
-    # browser = webdriver.Firefox()
-    browser = webdriver.Chrome()
-    browser.get(link)
+    for i in range(len(LINKS)):
 
-    #hit the "I agree" button
-    submit_form(browser)
+        if LINKS[i].find('videos') == -1:
+            raise Exception("Bad link format, link should end with /videos")
+        
+        print("Getting channel's number of videos...")
+        number_of_videos, number_of_subscribers = get_number_of_videos_and_subscribers(CHANNEL_NAMES[i])
+        
 
-    #scroll until you reach the bottom of the page
-    scroll_to_bottom(browser)
+        browser = webdriver.Chrome()
+        browser.set_page_load_timeout(10)
+        browser.implicitly_wait(10)
+        browser.get(LINKS[i])
 
-    #get all the video titles
-    videp_titles = get_video_titles(browser)
-    print(videp_titles)
+        #hit the "I agree" button
+        submit_form(browser)
 
-    #TODO: to get all the metadata: first select all the <div id="metadata-line"> and split each of them into the two spans (with further selecting)
-    
-    #sleep forever for debugging the browser (it closes once the script finishes executing)
-    while True:
-        print("sleeping...")
-        time.sleep(3)   
+        print("Scrolling to render all of the channel's videos...")
+        scroll_to_bottom(browser, number_of_videos)
 
-    # with open("page.html", "w", encoding='utf-8') as file:
-    #     file.write(browser.page_source)
+        print("Getting videos info...")
+        VIDEOS_INFO, browser = get_video_info(browser)
+        
+        print("Writing videos info to file...")
+        write_video_info(VIDEOS_INFO, RESULT_FILE_NAMES[i], number_of_subscribers, CHANNEL_NAMES[i], number_of_videos)
+
+        browser.close()
+        
+    print("All done! :D")
+
