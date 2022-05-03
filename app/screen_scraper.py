@@ -7,8 +7,6 @@ from selenium.webdriver.remote.webelement import WebElement
 from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
 
-#TODO: for number of likes per video we would probably need to save all the video links and run a loop over them either with selenium or requests lib
-
 #NOTE:  #each video's info is stored in a <ytd-grid-video-renderer> -> <div id="dismissible"> -> <div id="details"> -> <div id="meta"> 
         #things to look for in the "meta" div: 
         # 1) <h3> -> <a id="video-title">
@@ -177,11 +175,12 @@ def get_video_info(browser: webdriver.Chrome):
     return videos, browser
 
 
-def scroll_to_bottom(browser: webdriver.Chrome, number_of_videos: int):
+def scroll_to_bottom(browser: webdriver.Chrome, number_of_videos: int, hard_cap:int=8500):
     """This function scrolls to the bottom of the window to allow render of next batch of 30 videos.
     It does this for number_of_videos/30 + 1 to reach the bottom of the page."""
 
-    while len(browser.find_elements(by=By.CSS_SELECTOR, value="ytd-grid-video-renderer.style-scope.ytd-grid-renderer")) < number_of_videos:
+    while len(browser.find_elements(by=By.CSS_SELECTOR, value="ytd-grid-video-renderer.style-scope.ytd-grid-renderer")) < number_of_videos \
+        and len(browser.find_elements(by=By.CSS_SELECTOR, value="ytd-grid-video-renderer.style-scope.ytd-grid-renderer")) < hard_cap:
         previous_nr_of_vids = len(browser.find_elements(by=By.CSS_SELECTOR, value="ytd-grid-video-renderer.style-scope.ytd-grid-renderer"))
         new_nr_of_vids = -1
         browser.execute_script("window.scrollTo(0, document.querySelector('#content').scrollHeight);")
