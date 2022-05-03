@@ -180,16 +180,15 @@ def get_video_info(browser: webdriver.Chrome):
 def scroll_to_bottom(browser: webdriver.Chrome, number_of_videos: int):
     """This function scrolls to the bottom of the window to allow render of next batch of 30 videos.
     It does this for number_of_videos/30 + 1 to reach the bottom of the page."""
-    pass
 
-    # while len(browser.find_elements(by=By.CSS_SELECTOR, value="ytd-grid-video-renderer.style-scope.ytd-grid-renderer")) < number_of_videos:
-    #     previous_nr_of_vids = len(browser.find_elements(by=By.CSS_SELECTOR, value="ytd-grid-video-renderer.style-scope.ytd-grid-renderer"))
-    #     new_nr_of_vids = -1
-    #     browser.execute_script("window.scrollTo(0, document.querySelector('#content').scrollHeight);")
-    #     while new_nr_of_vids <= previous_nr_of_vids:
-    #         time.sleep(0.3)
-    #         print(new_nr_of_vids)
-    #         new_nr_of_vids = len(browser.find_elements(by=By.CSS_SELECTOR, value="ytd-grid-video-renderer.style-scope.ytd-grid-renderer"))
+    while len(browser.find_elements(by=By.CSS_SELECTOR, value="ytd-grid-video-renderer.style-scope.ytd-grid-renderer")) < number_of_videos:
+        previous_nr_of_vids = len(browser.find_elements(by=By.CSS_SELECTOR, value="ytd-grid-video-renderer.style-scope.ytd-grid-renderer"))
+        new_nr_of_vids = -1
+        browser.execute_script("window.scrollTo(0, document.querySelector('#content').scrollHeight);")
+        while new_nr_of_vids <= previous_nr_of_vids:
+            time.sleep(0.3)
+            print(new_nr_of_vids)
+            new_nr_of_vids = len(browser.find_elements(by=By.CSS_SELECTOR, value="ytd-grid-video-renderer.style-scope.ytd-grid-renderer"))
 
 
 def get_channel_name_from_link(link:str) -> str:
