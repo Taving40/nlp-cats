@@ -6,7 +6,6 @@ from selenium.webdriver.common.by import By
 from selenium.webdriver.remote.webelement import WebElement
 from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
-from numba import jit
 
 #NOTE:  #each video's info is stored in a <ytd-grid-video-renderer> -> <div id="dismissible"> -> <div id="details"> -> <div id="meta"> 
         #things to look for in the "meta" div: 
@@ -85,7 +84,6 @@ def write_video_info(videos: list, file: str, number_of_subs:str=None, channel_n
         }
         f.write(json.dumps(result, indent=3))
 
-@jit
 def parse_description(parent_element: WebElement) -> str:
     res = []
     children = parent_element.find_elements(by=By.CSS_SELECTOR, value="*")
@@ -191,7 +189,6 @@ def get_video_info(browser: webdriver.Chrome) -> tuple:
 
     return videos, browser
 
-@jit
 def get_number_of_rendered_vids(browser: webdriver.Chrome)-> int:
     return len(browser.find_elements(by=By.CSS_SELECTOR, value="ytd-grid-video-renderer.style-scope.ytd-grid-renderer"))
 
