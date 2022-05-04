@@ -6,6 +6,7 @@ from selenium.webdriver.common.by import By
 from selenium.webdriver.remote.webelement import WebElement
 from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
+from numba import jit
 
 #TODO: for number of likes per video we would probably need to save all the video links and run a loop over them either with selenium or requests lib
 
@@ -84,8 +85,9 @@ def write_video_info(videos: list, file: str, number_of_subs:str=None, channel_n
             "number of videos": number_of_vids,
             "videos": videos
         }
-        f.write(json.dumps(videos, indent=3))
+        f.write(json.dumps(result, indent=3))
 
+@jit
 def parse_description(parent_element: WebElement) -> str:
     res = []
     children = parent_element.find_elements(by=By.CSS_SELECTOR, value="*")
@@ -93,9 +95,8 @@ def parse_description(parent_element: WebElement) -> str:
         res.append(child.text + "\n")
     return ' '.join(res)
 
-# def my_find_element(by, locator)
 
-def get_video_info(browser: webdriver.Chrome):
+def get_video_info(browser: webdriver.Chrome) -> tuple:
 
     videos = []
 
@@ -146,20 +147,36 @@ def get_video_info(browser: webdriver.Chrome):
         print("Done opening new window!")
 
 
+        view_count = None
         print("Getting view_count...")
-        view_count = browser.find_element(by=By.CSS_SELECTOR, value=".view-count")
+        try:
+            view_count = browser.find_element(by=By.CSS_SELECTOR, value=".view-count")
+        except Exception:
+            pass
         print("Done getting view_count!")
 
+        likes = None
         print("Getting likes...")
-        likes = browser.find_element(by=By.CSS_SELECTOR, value="yt-formatted-string.style-scope.ytd-toggle-button-renderer.style-text")
+        try:
+            likes = browser.find_element(by=By.CSS_SELECTOR, value="yt-formatted-string.style-scope.ytd-toggle-button-renderer.style-text")
+        except Exception:
+            pass
         print("Done getting likes! ", likes.get_attribute("aria-label"))
 
+        date = None
         print("Getting date...")
-        date = browser.find_element(by=By.CSS_SELECTOR, value="#info-strings yt-formatted-string.style-scope.ytd-video-primary-info-renderer")
+        try:
+            date = browser.find_element(by=By.CSS_SELECTOR, value="#info-strings yt-formatted-string.style-scope.ytd-video-primary-info-renderer")
+        except Exception:
+            pass
         print("Done getting date! ", date.text)
 
+        desc = None
         print("Getting description...")
-        desc = browser.find_element(by=By.CSS_SELECTOR, value="div#description yt-formatted-string")
+        try:
+            desc = browser.find_element(by=By.CSS_SELECTOR, value="div#description yt-formatted-string")
+        except Exception:
+            pass
         print("Done getting description!")
 
         print("Storing information in video object...")
@@ -176,19 +193,29 @@ def get_video_info(browser: webdriver.Chrome):
 
     return videos, browser
 
+@jit
+def get_number_of_rendered_vids(browser: webdriver.Chrome)-> int:
+    return len(browser.find_elements(by=By.CSS_SELECTOR, value="ytd-grid-video-renderer.style-scope.ytd-grid-renderer"))
 
-def scroll_to_bottom(browser: webdriver.Chrome, number_of_videos: int):
+def scroll_to_bottom(browser: webdriver.Chrome, number_of_videos: int, hard_cap:int=5000) -> None:
     """This function scrolls to the bottom of the window to allow render of next batch of 30 videos.
     It does this for number_of_videos/30 + 1 to reach the bottom of the page."""
 
-    while len(browser.find_elements(by=By.CSS_SELECTOR, value="ytd-grid-video-renderer.style-scope.ytd-grid-renderer")) < number_of_videos:
-        previous_nr_of_vids = len(browser.find_elements(by=By.CSS_SELECTOR, value="ytd-grid-video-renderer.style-scope.ytd-grid-renderer"))
+    number_of_repeated_loops = 0
+    while get_number_of_rendered_vids(browser) < number_of_videos \
+        and get_number_of_rendered_vids(browser) < hard_cap \
+        and number_of_repeated_loops < 50:
+
+        previous_nr_of_vids = get_number_of_rendered_vids(browser)
         new_nr_of_vids = -1
+        number_of_repeated_loops = 0
         browser.execute_script("window.scrollTo(0, document.querySelector('#content').scrollHeight);")
-        while new_nr_of_vids <= previous_nr_of_vids:
+        while new_nr_of_vids <= previous_nr_of_vids \
+            and number_of_repeated_loops < 50:
             time.sleep(0.3)
+            number_of_repeated_loops += 1
             print(new_nr_of_vids)
-            new_nr_of_vids = len(browser.find_elements(by=By.CSS_SELECTOR, value="ytd-grid-video-renderer.style-scope.ytd-grid-renderer"))
+            new_nr_of_vids = get_number_of_rendered_vids(browser)
 
 
 def get_channel_name_from_link(link:str) -> str:
