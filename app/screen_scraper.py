@@ -86,8 +86,9 @@ def write_video_info(videos: list, file: str, number_of_subs:str=None, channel_n
 
 def write_video_info_100(videos:list, file:str, index):
     slice_of_vids = [vid.to_dict() for vid in videos[index-100:index]]
-    with open(file, "a", encoding="utf-8") as f:
-        f.write(json.dumps(slice_of_vids, indent=3))
+    if slice_of_vids:
+        with open(file, "a", encoding="utf-8") as f:
+            f.write(json.dumps(slice_of_vids, indent=3))
 
 def parse_description(parent_element: WebElement) -> str:
     res = []
@@ -174,7 +175,7 @@ def get_video_info(browser: webdriver.Edge, file:str) -> tuple:
             date = browser.find_element(by=By.CSS_SELECTOR, value="#info-strings yt-formatted-string.style-scope.ytd-video-primary-info-renderer")
         except Exception:
             pass
-            print("Done getting date! ", date.text)
+            print("Done getting date!")
 
         desc = None
         print("Getting description...")
