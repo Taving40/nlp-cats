@@ -54,7 +54,7 @@ class VideoInfo():
         return json.dumps(self.to_dict())
 
 def get_number_of_videos_and_subscribers(channel_name):
-    browser = webdriver.Chrome()
+    browser = webdriver.Edge()
     browser.set_page_load_timeout(10)
     browser.implicitly_wait(10)
     browser.get(f'https://www.youtube.com/results?search_query={channel_name}')
@@ -69,7 +69,7 @@ def get_number_of_videos_and_subscribers(channel_name):
     number_of_vids = int(number_of_vids[0:temp_index].replace(",", ""))
     return number_of_vids, number_of_subs
 
-def submit_form(browser: webdriver.Chrome):
+def submit_form(browser: webdriver.Edge):
     element = browser.find_element(by=By.CSS_SELECTOR, value="form")
     element.submit()
 
@@ -82,7 +82,13 @@ def write_video_info(videos: list, file: str, number_of_subs:str=None, channel_n
             "number of videos": number_of_vids,
             "videos": videos
         }
-        f.write(json.dumps(videos, indent=3))
+        f.write(json.dumps(result, indent=3))
+
+def write_video_info_100(videos:list, file:str, index):
+    slice_of_vids = [vid.to_dict() for vid in videos[index-100:index]]
+    if slice_of_vids:
+        with open(file, "a", encoding="utf-8") as f:
+            f.write(json.dumps(slice_of_vids, indent=3))
 
 def parse_description(parent_element: WebElement) -> str:
     res = []
@@ -91,9 +97,8 @@ def parse_description(parent_element: WebElement) -> str:
         res.append(child.text + "\n")
     return ' '.join(res)
 
-# def my_find_element(by, locator)
 
-def get_video_info(browser: webdriver.Chrome):
+def get_video_info(browser: webdriver.Edge, file:str) -> tuple:
 
     videos = []
 
@@ -121,6 +126,10 @@ def get_video_info(browser: webdriver.Chrome):
 
     for video in list(videos):
         print("Now trying for video ", videos.index(video))
+
+        if videos.index(video) % 100 == 0: #save periodically to avoid data loss on crash
+            write_video_info_100(videos, file, videos.index(video))
+
         print("Opening new window...")
 
         browser.execute_script("window.open();")            #open new tab
@@ -135,7 +144,7 @@ def get_video_info(browser: webdriver.Chrome):
             browser.switch_to.window(browser.window_handles[0]) #switch to new tab
             time.sleep(3)
             browser.close()
-            browser = webdriver.Chrome()
+            browser = webdriver.Edge()
             browser.set_page_load_timeout(10)
             browser.implicitly_wait(10)
             videos.remove(video)
@@ -144,29 +153,49 @@ def get_video_info(browser: webdriver.Chrome):
         print("Done opening new window!")
 
 
+        view_count = None
         print("Getting view_count...")
-        view_count = browser.find_element(by=By.CSS_SELECTOR, value=".view-count")
+        try:
+            view_count = browser.find_element(by=By.CSS_SELECTOR, value=".view-count")
+        except Exception:
+            pass
         print("Done getting view_count!")
 
+        likes = None
         print("Getting likes...")
-        likes = browser.find_element(by=By.CSS_SELECTOR, value="yt-formatted-string.style-scope.ytd-toggle-button-renderer.style-text")
-        print("Done getting likes! ", likes.get_attribute("aria-label"))
+        try:
+            likes = browser.find_element(by=By.CSS_SELECTOR, value="yt-formatted-string.style-scope.ytd-toggle-button-renderer.style-text")
+        except Exception:
+            pass
+        print("Done getting likes!")
 
+        date = None
         print("Getting date...")
-        date = browser.find_element(by=By.CSS_SELECTOR, value="#info-strings yt-formatted-string.style-scope.ytd-video-primary-info-renderer")
-        print("Done getting date! ", date.text)
+        try:
+            date = browser.find_element(by=By.CSS_SELECTOR, value="#info-strings yt-formatted-string.style-scope.ytd-video-primary-info-renderer")
+        except Exception:
+            pass
+            print("Done getting date!")
 
+        desc = None
         print("Getting description...")
-        desc = browser.find_element(by=By.CSS_SELECTOR, value="div#description yt-formatted-string")
-        print("Done getting description!")
+        try:
+            desc = browser.find_element(by=By.CSS_SELECTOR, value="div#description yt-formatted-string")
+        except Exception:
+            pass
+            print("Done getting description!")
 
         print("Storing information in video object...")
-        video.views = view_count.text
-        video.likes = likes.get_attribute("aria-label")
-        if not video.likes:
+        if view_count:
+            video.views = view_count.text
+        if likes and likes.get_attribute("aria-label"):
+            video.likes = likes.get_attribute("aria-label")
+        if likes and not video.likes:
             video.likes = likes.text
-        video.date = date.text
-        video.desc = parse_description(desc)
+        if date:
+            video.date = date.text
+        if desc:
+            video.desc = parse_description(desc)
         print("Done storing information in video object!\n")
 
         browser.execute_script("window.close();")
@@ -174,24 +203,32 @@ def get_video_info(browser: webdriver.Chrome):
 
     return videos, browser
 
+def get_number_of_rendered_vids(browser: webdriver.Edge)-> int:
+    return len(browser.find_elements(by=By.CSS_SELECTOR, value="ytd-grid-video-renderer.style-scope.ytd-grid-renderer"))
 
-def scroll_to_bottom(browser: webdriver.Chrome, number_of_videos: int, hard_cap:int=8500):
+def scroll_to_bottom(browser: webdriver.Edge, number_of_videos: int, hard_cap:int=3000) -> None:
     """This function scrolls to the bottom of the window to allow render of next batch of 30 videos.
     It does this for number_of_videos/30 + 1 to reach the bottom of the page."""
 
-    while len(browser.find_elements(by=By.CSS_SELECTOR, value="ytd-grid-video-renderer.style-scope.ytd-grid-renderer")) < number_of_videos \
-        and len(browser.find_elements(by=By.CSS_SELECTOR, value="ytd-grid-video-renderer.style-scope.ytd-grid-renderer")) < hard_cap:
-        previous_nr_of_vids = len(browser.find_elements(by=By.CSS_SELECTOR, value="ytd-grid-video-renderer.style-scope.ytd-grid-renderer"))
+    number_of_repeated_loops = 0
+    while get_number_of_rendered_vids(browser) < number_of_videos \
+        and get_number_of_rendered_vids(browser) < hard_cap \
+        and number_of_repeated_loops < 50:
+
+        previous_nr_of_vids = get_number_of_rendered_vids(browser)
         new_nr_of_vids = -1
+        number_of_repeated_loops = 0
         browser.execute_script("window.scrollTo(0, document.querySelector('#content').scrollHeight);")
-        while new_nr_of_vids <= previous_nr_of_vids:
+        while new_nr_of_vids <= previous_nr_of_vids \
+            and number_of_repeated_loops < 50:
             time.sleep(0.3)
-            print(new_nr_of_vids)
-            new_nr_of_vids = len(browser.find_elements(by=By.CSS_SELECTOR, value="ytd-grid-video-renderer.style-scope.ytd-grid-renderer"))
+            number_of_repeated_loops += 1
+            # print(number_of_repeated_loops)
+            new_nr_of_vids = get_number_of_rendered_vids(browser)
 
 
 def get_channel_name_from_link(link:str) -> str:
-    browser = webdriver.Chrome()
+    browser = webdriver.Edge()
     browser.set_page_load_timeout(10)
     browser.implicitly_wait(10)
     browser.get(link)
@@ -228,7 +265,7 @@ if __name__ == "__main__":
         number_of_videos, number_of_subscribers = get_number_of_videos_and_subscribers(CHANNEL_NAMES[i])
         
 
-        browser = webdriver.Chrome()
+        browser = webdriver.Edge()
         browser.set_page_load_timeout(10)
         browser.implicitly_wait(10)
         browser.get(LINKS[i])
@@ -240,7 +277,7 @@ if __name__ == "__main__":
         scroll_to_bottom(browser, number_of_videos)
 
         print("Getting videos info...")
-        VIDEOS_INFO, browser = get_video_info(browser)
+        VIDEOS_INFO, browser = get_video_info(browser, RESULT_FILE_NAMES[i])
         
         print("Writing videos info to file...")
         write_video_info(VIDEOS_INFO, RESULT_FILE_NAMES[i], number_of_subscribers, CHANNEL_NAMES[i], number_of_videos)
