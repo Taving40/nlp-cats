@@ -205,7 +205,7 @@ def get_video_info(browser: webdriver.Edge, file:str) -> tuple:
 def get_number_of_rendered_vids(browser: webdriver.Edge)-> int:
     return len(browser.find_elements(by=By.CSS_SELECTOR, value="ytd-grid-video-renderer.style-scope.ytd-grid-renderer"))
 
-def scroll_to_bottom(browser: webdriver.Edge, number_of_videos: int, hard_cap:int=200) -> None:
+def scroll_to_bottom(browser: webdriver.Edge, number_of_videos: int, hard_cap:int=3000) -> None:
     """This function scrolls to the bottom of the window to allow render of next batch of 30 videos.
     It does this for number_of_videos/30 + 1 to reach the bottom of the page."""
 
