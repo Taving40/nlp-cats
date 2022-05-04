@@ -8,8 +8,6 @@ from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
 from numba import jit
 
-#TODO: for number of likes per video we would probably need to save all the video links and run a loop over them either with selenium or requests lib
-
 #NOTE:  #each video's info is stored in a <ytd-grid-video-renderer> -> <div id="dismissible"> -> <div id="details"> -> <div id="meta"> 
         #things to look for in the "meta" div: 
         # 1) <h3> -> <a id="video-title">
